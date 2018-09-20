@@ -116,7 +116,7 @@ public class ZooKeeperConnection {
             while(!testing) {
                 System.out.println("Enter score: ");
                 score = sc.next();
-                if(score < 0) {
+                if(score.charAt(0) == '-') {
                     System.out.println("Invalid score. Exiting!");
                     break;
                 }

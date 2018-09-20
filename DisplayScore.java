@@ -38,13 +38,14 @@ public class DisplayScore {
     private static List<PlayerScore> topScores;
     private static List<PlayerScore> recentScores;
     private static Set<String> watcherSet;
-//    private static Set<String> oldPlayers;
+    private static Set<String> oldPlayers;
     
     DisplayScore(int maxSize) {
         topScores = new ArrayList<PlayerScore>();
         recentScores = new ArrayList<PlayerScore>();
         watcherSet = new HashSet<String>();
-//        isRootWatched = false;
+        oldPlayers = new HashSet<String>();
+        isRootWatched = false;
     }
     
     // Method to connect zookeeper ensemble.
@@ -86,15 +87,15 @@ public class DisplayScore {
         }
     }
     
-//    public static String getNewPlayer() throws
-//    InterruptedException,KeeperException{
-//        List <String> playerNames = zk.getChildren(path, false);
-//        for(int i = 0; i < playerNames.size(); i++) {
-//            String playerName = playerNames.get(i);
-//            if(!oldPlayers.contains(playerName)) return playerName;
-//        }
-//        return "";
-//    }
+        public static String getNewPlayer() throws
+        InterruptedException,KeeperException{
+            List <String> playerNames = zk.getChildren(path, false);
+            for(int i = 0; i < playerNames.size(); i++) {
+                String playerName = playerNames.get(i);
+                if(!oldPlayers.contains(playerName)) return playerName;
+            }
+            return "";
+        }
     
     public static void chainedWatcher(String root, boolean isRoot) throws
     InterruptedException,KeeperException {
@@ -110,18 +111,34 @@ public class DisplayScore {
                     try {
                         getZnodeData();
                         connectedSignal.countDown();
-//                        if(!isRoot)
+                        if(!isRoot)
                             watcherSet.add(we.getPath());
-//                        else {
-////                            isRootWatched = false;
-////                            watcherSet.add(getNewPlayer());
-//                        }
+                        else {
+                            isRootWatched = false;
+                            String newPlayer = path + "/" + getNewPlayer();
+                            watcherSet.add(newPlayer);
+                            System.out.println("CHILD ADDED " + newPlayer);
+                        }
+                        setChainedWatcher();
                     } catch(Exception ex) {
                         System.out.println(ex.getMessage());
                     }
                 }
             }
         }, null);
+    }
+    
+    public static void setChainedWatcher() throws
+    InterruptedException,KeeperException {
+        if(watcherSet.size() > 0) {
+            for(String name: watcherSet)
+                chainedWatcher(name, false);
+            watcherSet.clear();
+        }
+        if(!isRootWatched) {
+            chainedWatcher(path, true);
+            isRootWatched = true;
+        }
     }
     
     public static void getZnodeData() throws Exception {
@@ -149,19 +166,19 @@ public class DisplayScore {
                 return (int) (p2.timeStamp - p1.timeStamp);
             }
         });
-
+        
         if(scoresSize > maxSize)
             recentScores = allRecentScores.subList(0, maxSize);
         else
             recentScores = new ArrayList<>(allRecentScores);
-
+        
         List<PlayerScore> allTopScores = new ArrayList<>(allScores);
         Collections.sort(allTopScores, new Comparator<PlayerScore>(){
             public int compare(PlayerScore p1, PlayerScore p2) {
                 return p2.score - p1.score;
             }
         });
-
+        
         if(scoresSize > maxSize)
             topScores = allTopScores.subList(0, maxSize);
         else
@@ -180,33 +197,25 @@ public class DisplayScore {
             zk = connect(hostPort);
             if(znode_exists(path)) {
                 List <String> playerNames = zk.getChildren(path, false);
-//                chainedWatcher(path, true);
-//                isRootWatched = true;
+                chainedWatcher(path, true);
+                isRootWatched = true;
                 for(int i = 0; i < playerNames.size(); i++) {
                     String playerName = playerNames.get(i);
                     chainedWatcher(path + "/" + playerName, false);
-//                    oldPlayers.add(playerName);
+                    oldPlayers.add(playerName);
                 }
                 
                 getZnodeData();
                 connectedSignal.await();
             }
             
+            Scanner sc = new Scanner(System.in);
             while(true) {
-//                if(!isRootWatched) {
-////                    chainedWatcher(path, true);
-//                    isRootWatched = true;
-//                }
-                
-                if(watcherSet.size() > 0) {
-                    for(String name: watcherSet)
-                        chainedWatcher(name, false);
-                    watcherSet.clear();
-                }
+                sc.next();
             }
         } catch (Exception e) {
             System.out.println(e.getMessage()); //Catch error message
         }
-//        close();
+        //        close();
     }
 }
