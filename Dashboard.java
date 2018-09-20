@@ -25,27 +25,27 @@ class PlayerScore {
     }
 }
 
-public class DisplayScore {
+public class Dashboard {
     // create static instance for zookeeper class.
     private static ZooKeeper zk;
     private static final CountDownLatch connectedSignal = new CountDownLatch(1);
     
-    // znode path
+    // Variable to store z-node hierarchy
     private static String path = "/PlayerList";
     
     private static int maxSize;
     private static boolean isRootWatched;
     private static List<PlayerScore> topScores;
     private static List<PlayerScore> recentScores;
-    private static Set<String> watcherSet;
+    private static Set<String> pendingWatchers;
     private static Set<String> oldPlayers;
     
-    DisplayScore(int maxSize) {
+    Dashboard() {
+        isRootWatched = false;
         topScores = new ArrayList<PlayerScore>();
         recentScores = new ArrayList<PlayerScore>();
-        watcherSet = new HashSet<String>();
+        pendingWatchers = new HashSet<String>();
         oldPlayers = new HashSet<String>();
-        isRootWatched = false;
     }
     
     // Method to connect zookeeper ensemble.
@@ -67,37 +67,38 @@ public class DisplayScore {
         zk.close();
     }
     
-    // Method to check existence of znode and its status, if znode is available.
-    public static boolean znode_exists(String path) throws
+    // Method to check existence of a z-node
+    public static boolean isNodeExists(String path) throws
     KeeperException,InterruptedException {
         return (zk.exists(path, true) != null);
     }
     
-    public static void print() {
-        System.out.println("Most recent scores");
-        System.out.println("------------------");
-        for(int i = 0; i < recentScores.size(); i++) {
-            System.out.println(recentScores.get(i).name + "\t" + recentScores.get(i).score + " " + (recentScores.get(i).online ? "**" : ""));
+    // Returns new player that joined
+    public static String getNewPlayer() throws
+    InterruptedException,KeeperException{
+        List <String> playerNames = zk.getChildren(path, false);
+        for (String playerName : playerNames) {
+            if (!oldPlayers.contains(playerName)) return playerName;
         }
-        System.out.println();
-        System.out.println("Highest scores");
-        System.out.println("--------------");
-        for(int i = 0; i < topScores.size(); i++) {
-            System.out.println(topScores.get(i).name + "\t" + topScores.get(i).score + " " + (topScores.get(i).online ? "**" : ""));
+        return "";
+    }
+    
+    // Set watchers for expired/new nodes
+    public static void setChainedWatcher() throws
+    InterruptedException,KeeperException {
+        if(pendingWatchers.size() > 0) {
+            for(String name: pendingWatchers)
+                setChildWatcher(name, false);
+            pendingWatchers.clear();
+        }
+        if(!isRootWatched) {
+            setChildWatcher(path, true);
+            isRootWatched = true;
         }
     }
     
-        public static String getNewPlayer() throws
-        InterruptedException,KeeperException{
-            List <String> playerNames = zk.getChildren(path, false);
-            for(int i = 0; i < playerNames.size(); i++) {
-                String playerName = playerNames.get(i);
-                if(!oldPlayers.contains(playerName)) return playerName;
-            }
-            return "";
-        }
-    
-    public static void chainedWatcher(String root, boolean isRoot) throws
+    // Set watcher for a z-node
+    public static void setChildWatcher(String root, boolean isRoot) throws
     InterruptedException,KeeperException {
         zk.getChildren(root, new Watcher() {
             public void process(WatchedEvent we) {
@@ -109,16 +110,17 @@ public class DisplayScore {
                     }
                 } else {
                     try {
-                        getZnodeData();
+                        getSnapshot();
                         connectedSignal.countDown();
                         if(!isRoot)
-                            watcherSet.add(we.getPath());
+                            pendingWatchers.add(we.getPath());
                         else {
                             isRootWatched = false;
                             String newPlayer = path + "/" + getNewPlayer();
-                            watcherSet.add(newPlayer);
-                            System.out.println("CHILD ADDED " + newPlayer);
+                            pendingWatchers.add(newPlayer);
+                            System.out.println("New Player Joined - " + newPlayer);
                         }
+                        
                         setChainedWatcher();
                     } catch(Exception ex) {
                         System.out.println(ex.getMessage());
@@ -128,38 +130,26 @@ public class DisplayScore {
         }, null);
     }
     
-    public static void setChainedWatcher() throws
-    InterruptedException,KeeperException {
-        if(watcherSet.size() > 0) {
-            for(String name: watcherSet)
-                chainedWatcher(name, false);
-            watcherSet.clear();
-        }
-        if(!isRootWatched) {
-            chainedWatcher(path, true);
-            isRootWatched = true;
-        }
-    }
-    
-    public static void getZnodeData() throws Exception {
+    // Get current snapshot of data
+    public static void getSnapshot() throws Exception {
         List<PlayerScore> allScores = new ArrayList<PlayerScore>();
         
         List <String> playerNames = zk.getChildren(path, false);
-        for(int i = 0; i < playerNames.size(); i++) {
-            String playerName = playerNames.get(i);
-            boolean playerOnline = znode_exists(path + "/" + playerName + "/online");
+        for (String playerName : playerNames) { // Get all scores of all the players
+            boolean playerOnline = isNodeExists(path + "/" + playerName + "/online");
             
             List<String> timeStamps = zk.getChildren(path + "/" + playerName, false);
-            for(int j = 0; j < timeStamps.size(); j++) {
-                if(timeStamps.get(j).equals("online")) continue;
+            for (String timeStamp : timeStamps) {
+                if (timeStamp.equals("online")) continue;
                 
-                String scoreAtTime = new String(zk.getData(path + "/" + playerName + "/" + timeStamps.get(j), false, null), "UTF-8");
-                allScores.add(new PlayerScore(playerOnline, playerName, Long.parseLong(timeStamps.get(j)), Integer.parseInt(scoreAtTime)));
+                String scoreAtTime = new String(zk.getData(path + "/" + playerName + "/" + timeStamp, false, null), "UTF-8");
+                allScores.add(new PlayerScore(playerOnline, playerName, Long.parseLong(timeStamp), Integer.parseInt(scoreAtTime)));
             }
         }
         
         int scoresSize = allScores.size();
         
+        // Get maxSize recent scores (sort all the players on time stamp)
         List<PlayerScore> allRecentScores = new ArrayList<>(allScores);
         Collections.sort(allRecentScores, new Comparator<PlayerScore>(){
             public int compare(PlayerScore p1, PlayerScore p2) {
@@ -172,6 +162,7 @@ public class DisplayScore {
         else
             recentScores = new ArrayList<>(allRecentScores);
         
+        // Get maxSize top scores (sort all the players on score)
         List<PlayerScore> allTopScores = new ArrayList<>(allScores);
         Collections.sort(allTopScores, new Comparator<PlayerScore>(){
             public int compare(PlayerScore p1, PlayerScore p2) {
@@ -184,38 +175,59 @@ public class DisplayScore {
         else
             topScores = new ArrayList<>(allTopScores);
         
-        print();
+        printDashboard();
+    }
+    
+    // Method to print dashboard
+    public static void printDashboard() {
+        System.out.println("Most recent scores");
+        System.out.println("------------------");
+        for (PlayerScore recentScore : recentScores) {
+            System.out.println(recentScore.name + "\t" + recentScore.score + " " + (recentScore.online ? "**" : ""));
+        }
+        System.out.println();
+        System.out.println("Highest scores");
+        System.out.println("--------------");
+        for (PlayerScore topScore : topScores) {
+            System.out.println(topScore.name + "\t" + topScore.score + " " + (topScore.online ? "**" : ""));
+        }
+        System.out.println();
     }
     
     public static void main(String[] args) {
         String hostPort = args[0];
         maxSize = Integer.parseInt(args[1]);
         
-        DisplayScore dp = new DisplayScore(maxSize);
+        Dashboard dp = new Dashboard();
         
         try {
             zk = connect(hostPort);
-            if(znode_exists(path)) {
+            
+            if(isNodeExists(path)) { // PlayerList node exists
                 List <String> playerNames = zk.getChildren(path, false);
-                chainedWatcher(path, true);
+                setChildWatcher(path, true);
                 isRootWatched = true;
-                for(int i = 0; i < playerNames.size(); i++) {
-                    String playerName = playerNames.get(i);
-                    chainedWatcher(path + "/" + playerName, false);
+                
+                // Set child-watchers for all the player nodes
+                for (String playerName : playerNames) {
+                    setChildWatcher(path + "/" + playerName, false);
                     oldPlayers.add(playerName);
                 }
                 
-                getZnodeData();
+                // Print dashboard once
+                getSnapshot();
+                
                 connectedSignal.await();
+            } else { // PlayerList node doesn't exist
+                System.out.println("No scores present. Exiting!");
+                return;
             }
             
             Scanner sc = new Scanner(System.in);
-            while(true) {
-                sc.next();
-            }
+            sc.next();
+            close();
         } catch (Exception e) {
-            System.out.println(e.getMessage()); //Catch error message
+            System.out.println(e.getMessage());
         }
-        //        close();
     }
 }

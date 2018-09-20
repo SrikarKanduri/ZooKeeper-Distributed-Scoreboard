@@ -9,17 +9,17 @@ import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.ZooDefs;
-import org.apache.zookeeper.data.Stat;
 
-public class ZooKeeperConnection {
+public class Player {
     // create static instance for zookeeper class.
     private static ZooKeeper zk;
     private static final CountDownLatch connectedSignal = new CountDownLatch(1);
     
+    // Variable to store z-node hierarchy
     private static String path;
     
-    // Method to connect zookeeper ensemble.
-    public static ZooKeeper connect(String host) throws IOException,InterruptedException {
+    // Method to connect to zookeeper ensemble.
+    private static ZooKeeper connect(String host) throws IOException,InterruptedException {
         zk = new ZooKeeper(host,5000,new Watcher() {
             public void process(WatchedEvent we) {
                 
@@ -34,51 +34,64 @@ public class ZooKeeperConnection {
     }
     
     // Method to disconnect from zookeeper server
-    public static void close() throws InterruptedException {
+    private static void close() throws InterruptedException {
         zk.close();
     }
     
-    // Method to create znode in zookeeper ensemble
-    public static void create(String path, byte[] data) throws
+    // Method to create a z-node in zookeeper ensemble
+    private static void createNode(String path, byte[] data) throws
     KeeperException,InterruptedException {
         zk.create(path, data, ZooDefs.Ids.OPEN_ACL_UNSAFE,
                   CreateMode.PERSISTENT);
     }
     
-    // Method to create znode in zookeeper ensemble
-    public static void createEphemeral(String path, byte[] data) throws
+    // Method to create an ephemeral z-node in zookeeper ensemble
+    private static void createEphemeralNode(String path, byte[] data) throws
     KeeperException,InterruptedException {
         zk.create(path, data, ZooDefs.Ids.OPEN_ACL_UNSAFE,
                   CreateMode.EPHEMERAL);
     }
     
-    // Method to check existence of znode and its status, if znode is available.
-    public static Stat znode_exists(String path) throws
+    // Method to check existence of a z-node
+    private static boolean isNodeExists(String path) throws
     KeeperException,InterruptedException {
-        return zk.exists(path, true);
+        return (zk.exists(path, true) != null);
     }
     
-    // Method to update the data in a znode. Similar to getData but without watcher.
-    public static void update(String path, byte[] data) throws
-    KeeperException,InterruptedException {
-        zk.setData(path, data, zk.exists(path,true).getVersion());
-    }
-    
-    public static void automateTests(String cnt, String dly, String score) throws
-    KeeperException,InterruptedException {
+    // Method to generate random scores (and delays)
+    private static void automateTests(String cnt, String dly, String scr) throws
+    KeeperException,InterruptedException,NumberFormatException {
         int count = Integer.parseInt(cnt);
-        long waitTime = Long.parseLong(dly);
+        long delay = Long.parseLong(dly);
+        int score = Integer.parseInt(scr);
+        
+        double randomDelay, randomScore;
+        int newDelay = 0, newScore;
+        
+        Random r = new Random();
         
         while(count-- > 0) {
-            Thread.sleep(waitTime);
-            create(path + "/" + new Date(), score.getBytes());
+            Thread.sleep(newDelay);
+            
+            do {
+                randomDelay = r.nextGaussian() * 1000/3 + delay; // 3 SDs for more probability of value +/- 1000
+                newDelay = (int) Math.round(randomDelay);
+            } while(newDelay <= 0); // Handling negative randoms
+            
+            do {
+                randomScore = r.nextGaussian() * 1000/3 + score;
+                newScore = (int) Math.round(randomScore);
+            } while(newScore <= 0); // Handling negative randoms
+            
+            System.out.println("Posting score: " + newScore + " and waiting(ms) " + newDelay);
+            createNode(path + "/" + System.currentTimeMillis(), (newScore + "").getBytes());
         }
     }
     
     public static void main(String[] args) {
         Scanner sc = new Scanner(System.in);
         
-        boolean testing = false;
+        boolean testing = false; // To check for automated input
         String hostPort = args[0];
         String name = args[1];
         String count = "";
@@ -92,35 +105,29 @@ public class ZooKeeperConnection {
             score = args[4];
         }
         
-        // znode path
-        // Check if znode already exists
-        byte[] data = score.getBytes();
-        
         try {
             zk = connect(hostPort);
             
             path = "/PlayerList";
-            Stat stat = znode_exists(path); // Stat checks the path of the znode
-            if(stat == null) { // Node doesn't exist
-                create(path, "".getBytes());
+            if(!isNodeExists(path)) { // PlayerList node doesn't exist
+                createNode(path, "".getBytes());
             }
             
             path += "/" + name;
-            stat = znode_exists(path);
-            if(stat == null) { // Node doesn't exist
-                create(path, "".getBytes());
+            if(!isNodeExists(path)) { // Player node doesn't exist
+                createNode(path, "".getBytes());
             }
             
-            createEphemeral(path + "/online", "".getBytes());
+            // Ephemeral node to indicate if the player is online
+            createEphemeralNode(path + "/online", "".getBytes());
             
             while(!testing) {
                 System.out.println("Enter score: ");
                 score = sc.next();
-                if(score.charAt(0) == '-') {
-                    System.out.println("Invalid score. Exiting!");
-                    break;
-                }
-                create(path + "/" + System.currentTimeMillis(), score.getBytes());
+                
+                Integer.parseInt(score); // Check for valid scores; If invalid, throws exception
+                
+                createNode(path + "/" + System.currentTimeMillis(), score.getBytes());
             }
             
             if(testing) automateTests(count, waitTime, score);
