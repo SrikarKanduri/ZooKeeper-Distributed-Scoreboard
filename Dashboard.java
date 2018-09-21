@@ -40,7 +40,7 @@ public class Dashboard {
     private static Set<String> oldPlayers;
     
     Dashboard() {
-        isRootWatched = false;
+//         isRootWatched = false;
         topScores = new ArrayList<PlayerScore>();
         recentScores = new ArrayList<PlayerScore>();
         pendingWatchers = new HashSet<String>();
@@ -111,7 +111,7 @@ public class Dashboard {
                             pendingWatchers.add(we.getPath());
                         else {
                             setChildWatcher(path, true);
-                            isRootWatched = false;
+//                             isRootWatched = false;
                             String newPlayer = path + "/" + getNewPlayer();
                             pendingWatchers.add(newPlayer);
                             System.out.println("New Player Joined - " + newPlayer);
