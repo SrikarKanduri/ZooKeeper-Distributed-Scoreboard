@@ -34,7 +34,6 @@ public class Dashboard {
     private static String path = "/PlayerList";
     
     private static int maxSize;
-    private static boolean isRootWatched;
     private static List<PlayerScore> topScores;
     private static List<PlayerScore> recentScores;
     private static Set<String> pendingWatchers;
@@ -84,16 +83,12 @@ public class Dashboard {
     }
     
     // Set watchers for expired/new nodes
-    public static void setChainedWatcher() throws
+    public synchronized static void setChainedWatcher() throws
     InterruptedException,KeeperException {
         if(pendingWatchers.size() > 0) {
             for(String name: pendingWatchers)
                 setChildWatcher(name, false);
             pendingWatchers.clear();
-        }
-        if(!isRootWatched) {
-            setChildWatcher(path, true);
-            isRootWatched = true;
         }
     }
     
@@ -115,6 +110,7 @@ public class Dashboard {
                         if(!isRoot)
                             pendingWatchers.add(we.getPath());
                         else {
+                            setChildWatcher(path, true);
                             isRootWatched = false;
                             String newPlayer = path + "/" + getNewPlayer();
                             pendingWatchers.add(newPlayer);
@@ -206,7 +202,6 @@ public class Dashboard {
             if(isNodeExists(path)) { // PlayerList node exists
                 List <String> playerNames = zk.getChildren(path, false);
                 setChildWatcher(path, true);
-                isRootWatched = true;
                 
                 // Set child-watchers for all the player nodes
                 for (String playerName : playerNames) {
