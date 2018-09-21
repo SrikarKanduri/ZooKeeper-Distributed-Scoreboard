@@ -8,8 +8,8 @@ java -cp .:zookeeper-3.4.12.jar:slf4j-simple-1.7.25.jar:slf4j-api-1.7.25.jar Pla
 java -cp .:zookeeper-3.4.12.jar:slf4j-simple-1.7.25.jar:slf4j-api-1.7.25.jar Player <host> <name> <count> <delay> <score>
 
 # Watcher execution
-java -cp .:zookeeper-3.4.12.jar:slf4j-simple-1.7.25.jar:slf4j-api-1.7.25.jar Dashboard <host>
+java -cp .:zookeeper-3.4.12.jar:slf4j-simple-1.7.25.jar:slf4j-api-1.7.25.jar Dashboard <host> <size>
 
 # Miscellaneous
-# Compiling .java
+# Compiling .java files
 javac -cp zookeeper-3.4.12.jar *.java 
